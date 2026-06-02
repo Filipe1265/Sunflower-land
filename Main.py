@@ -17,8 +17,8 @@ def rodar_servidor_web():
     app.run(host="0.0.0.0", port=porta)
 
 # 2. CONFIGURAÇÃO SEGURA DO BOT DO TELEGRAM
-TOKEN = os.environ.get("8779097957:AAEDGqwe5FQfbUQZI-IC4yBN87_ru9C1ccQ")
-CHAT_ID = int(os.environ.get("5303286197"))
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID"))
 
 # Importante: Desativamos 'threaded' para o plano free do Render rodar mais liso
 bot = telebot.TeleBot(TOKEN, threaded=False)
