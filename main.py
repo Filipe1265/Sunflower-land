@@ -1,112 +1,116 @@
 import os
 import time
 import threading
+import requests
 from flask import Flask
 import telebot
 
-# 1. CONFIGURAÇÃO DO SITE FALSO PARA O RENDER NÃO DERRUBAR O BOT
+# 1. CONFIGURAÇÃO DO SITE FALSO PARA O RENDER
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Sunflower Land online e operando na nuvem!"
+    return "Monitor Automático da Fazenda 163523 Online!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=porta)
 
-# 2. CONFIGURAÇÃO DO BOT DO TELEGRAM
-# Recomenda-se usar variáveis de ambiente no Render. 
-# Caso prefira direto no código, mude para: TOKEN = "SEU_TOKEN" e CHAT_ID = SEU_ID
+# 2. CONFIGURAÇÃO DO TELEGRAM E JOGO
 TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779097957:AAEDGqwe5FQfbUQZI-IC4yBN87_ru9C1ccQ")
 CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID", 5303286197))
+FARM_ID = 163523  # <--- Sua fazenda configurada fixa no robô!
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
 
-# TEMPOS EXATOS CONVERTIDOS EM SEGUNDOS
+# Banco de dados temporário na memória para acompanhar o que está plantado
+# Estrutura: {id_do_terreno: {"planta": "tomate", "tempo_colheita": 178239281}}
+terrenos_monitorados = {}
+
+# Tempos das suas culturas em segundos (padrão do jogo)
 TEMPOS = {
-    "cenoura": 3420,          # 57 minutos
-    "tomate": 6480,           # 1 hora e 48 minutos
-    "arvore": 7200,           # 2 horas
-    "milho": 61560,           # 17 horas e 6 minutos
-    "trigo": 73860,           # 20 horas e 31 minutos
-    "couve": 108000,          # 1 dia e 6 horas
-    "barley": 147600          # 1 dia e 17 horas
+    "cenoura": 3420,          # 57 min
+    "tomate": 6480,           # 1h 48min
+    "arvore": 7200,           # 2h
+    "milho": 61560,           # 17h 6min
+    "trigo": 73860,           # 20h 31min
+    "couve": 108000,          # 1 dia e 6h
+    "barley": 147600          # 1 dia e 17h
 }
 
-def temporizador(chat_id, planta, segundos):
-    time.sleep(segundos)
-    # Alerta visual bonito para o Telegram
-    bot.send_message(
-        chat_id, 
-        f"🚨 **Hora da Colheita!** Suas plantações de **{planta.upper()}** estão prontas no Sunflower Land! 🌾🌻🍅", 
-        parse_mode="Markdown"
-    )
-
-@bot.message_handler(commands=['start', 'ajuda'])
-def enviar_boas_vindas(message):
-    texto = (
-        "🧑‍🌾 **Bot do Sunflower Land Ativo!**\n\n"
-        "Para iniciar um cronômetro, use:\n"
-        "`/plantar [nome_da_planta]`\n\n"
-        "**Plantações configuradas:**\n"
-        "• `/plantar cenoura` (57 min)\n"
-        "• `/plantar tomate` (1h 48min)\n"
-        "• `/plantar arvore` (2h)\n"
-        "• `/plantar milho` (17h 6min)\n"
-        "• `/plantar trigo` (20h 31min)\n"
-        "• `/plantar couve` (1 dia e 6h)\n"
-        "• `/plantar barley` (1 dia e 17h)"
-    )
-    bot.reply_to(message, texto, parse_mode="Markdown")
-
-@bot.message_handler(commands=['plantar'])
-def iniciar_cronometro(message):
-    try:
-        partes = message.text.split()
-        if len(partes) < 2:
-            raise IndexError
-            
-        # Pega o nome da planta digitada e padroniza sem acento básico
-        planta = partes[1].lower().replace("árvore", "arvore")
-        
-        if planta in TEMPOS:
-            segundos_totais = TEMPOS[planta]
-            
-            # Formatação inteligente do tempo restante para exibição
-            dias = segundos_totais // 86400
-            horas = (segundos_totais % 86400) // 3600
-            minutos = (segundos_totais % 3600) // 60
-            
-            partes_texto = []
-            if dias > 0:
-                partes_texto.append(f"{dias} dia(s)")
-            if horas > 0:
-                partes_texto.append(f"{horas} hora(s)")
-            if minutos > 0:
-                partes_texto.append(f"{minutos} minuto(s)")
+def checar_fazenda_loop():
+    """Roda de 2 em 2 minutos checando a API do jogo"""
+    print(f"🕵️‍♂️ Iniciando monitoramento automático da fazenda {FARM_ID}...")
+    
+    # URL pública da API oficial do Sunflower Land para ler fazendas
+    url_api = f"https://sunflower-land.com{FARM_ID}"
+    
+    while True:
+        try:
+            resposta = requests.get(url_api, timeout=15)
+            if resposta.status_code == 200:
+                dados = resposta.json()
                 
-            tempo_texto = " e ".join(partes_texto) if len(partes_texto) == 2 else ", ".join(partes_texto)
+                # Acessa a lista de terrenos (plots) dentro do JSON do jogo
+                # Nota: Os nomes exatos das chaves dependem do formato atual da API do SFL
+                fazenda_estado = dados.get("state", {})
+                terrenos = fazenda_estado.get("crops", {}) # Dicionário de terrenos do jogador
+                
+                tempo_atual = int(time.time())
+                
+                for terreno_id, info_terreno in terrenos.items():
+                    planta_atual = info_terreno.get("crop", {}).get("name")
+                    data_plantio = info_terreno.get("crop", {}).get("plantedAt") # timestamp em milissegundos
+                    
+                    if planta_atual and data_plantio:
+                        planta_nome = planta_atual.lower()
+                        data_plantio_segundos = data_plantio // 1000
+                        
+                        # Verifica se é uma planta cadastrada e se ainda não estamos monitorando este plantio específico
+                        id_unico_plantio = f"{terreno_id}_{data_plantio_segundos}"
+                        
+                        if planta_nome in TEMPOS and id_unico_plantio not in terrenos_monitorados:
+                            # Descobre o segundo exato em que vai ficar pronto
+                            tempo_total = TEMPOS[planta_nome]
+                            tempo_colheita = data_plantio_segundos + tempo_total
+                            
+                            # Registra o monitoramento
+                            terrenos_monitorados[id_unico_plantio] = {
+                                "planta": planta_nome,
+                                "colheita_em": tempo_colheita,
+                                "notificado": False
+                            }
+                            
+                            print(f"🌱 Novo plantio detectado no terreno {terreno_id}: {planta_nome.capitalize()}")
+                
+                # Varre os plantios registrados para ver se algum ficou pronto
+                for id_plantio, info in list(terrenos_monitorados.items()):
+                    if not info["notificado"] and tempo_atual >= info["colheita_em"]:
+                        # Envia o alerta automático no Telegram!
+                        msg = f"🚨 **ALERTA AUTOMÁTICO!**\nSua plantação de **{info['planta'].capitalize()}** na fazenda **#{FARM_ID}** está pronta para colheita! 🌾🍅🌻"
+                        bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+                        info["notificado"] = True
+                        
+            else:
+                print(f"⚠️ Erro ao acessar API do jogo: Status {resposta.status_code}")
+                
+        except Exception as e:
+            print(f"❌ Erro no loop de checagem: {e}")
             
-            bot.reply_to(
-                message, 
-                f"⏳ Cronômetro iniciado para **{planta.capitalize()}**!\n"
-                f"Vou te mandar mensagem daqui a **{tempo_texto}**.", 
-                parse_mode="Markdown"
-            )
-            
-            # Dispara a contagem em segundo plano
-            threading.Thread(target=temporizador, args=(CHAT_ID, planta, segundos_totais)).start()
-        else:
-            bot.reply_to(message, "❌ Planta não cadastrada. Use `/ajuda` para ver as opções válidas.")
-    except IndexError:
-        bot.reply_to(message, "⚠️ Informe a planta ao lado do comando. Exemplo: `/plantar milho`")
+        time.sleep(120) # Espera 2 minutos antes de espiar de novo
 
-# 3. INICIALIZAÇÃO EM PARALELO (SITE + BOT)
+# Comandos básicos caso você queira interagir
+@bot.message_handler(commands=['start', 'status'])
+def enviar_status(message):
+    bot.reply_to(message, f"🤖 **Monitor Automático Ativo!**\n\nEstou cuidando da Fazenda **#{FARM_ID}** 24h por dia. Não precisa digitar nada quando plantar, eu aviso aqui!")
+
 if __name__ == '__main__':
-    t = threading.Thread(target=rodar_servidor_web)
-    t.start()
+    # Linha do Flask para manter o Render feliz
+    threading.Thread(target=rodar_servidor_web).start()
     
-    print("Bot do Sunflower Land iniciado com sucesso!")
+    # Nova linha que inicia o espião da sua fazenda
+    threading.Thread(target=checar_fazenda_loop).start()
+    
+    print("Bot com rastreador automático iniciado!")
     bot.infinity_polling()
-    
+            
