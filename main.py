@@ -118,11 +118,20 @@ def enviar_status(message):
     )
 
 if __name__ == '__main__':
-    threading.Thread(target=rodar_servidor_web).start()
+    # 1. Abre o servidor Web para o Render ficar feliz (Prioridade 1)
+    t_web = threading.Thread(target=rodar_servidor_web)
+    t_web.daemon = True
+    t_web.start()
     
+    # 2. Inicia o espião da fazenda em uma thread totalmente isolada e segura (Prioridade 2)
     t_monitor = threading.Thread(target=checar_fazenda_loop)
     t_monitor.daemon = True
     t_monitor.start()
     
-    print("Bot com rastreador direto iniciado com sucesso!")
-    bot.infinity_polling()
+    # 3. Dá 5 segundos de folga para o sistema respirar antes de ligar o Telegram
+    time.sleep(5)
+    
+    # 4. Lança o polling do Telegram na linha principal (Garante que ele responda e não congele)
+    print("🚀 [SISTEMA] Bot e Rastreador integrados com sucesso. Conectando ao Telegram...")
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    
