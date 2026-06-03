@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Monitor SFL Automatizado e com Relatório Online!"
+    return "Monitor SFL em Tempo Real Online!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 10000))
@@ -42,10 +42,9 @@ TRADUCAO = {
 def executar_varredura_automatica():
     """Faz a checagem na API do jogo"""
     global terrenos_monitorados
-    # CORREÇÃO: URL restaurada com o caminho oficial da API pública do jogo
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
-    print("🔄 [LOG] Iniciando varredura programada na fazenda...")
+    print("🔄 [LOG] Iniciando varredura na fazenda...")
     try:
         resposta = requests.get(url_api, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
         print(f"📡 [LOG] Resposta da API recebida. Status: {resposta.status_code}")
@@ -94,7 +93,9 @@ def executar_varredura_automatica():
                         id_unico = f"fruta_{patch_id}_{data_segundos}"
                         
                         if fruta_nome in TEMPOS and id_unico not in terrenos_monitorados:
-                            tempo_colheita = data_segundos + TEMPOS[fruta_nome]
+                            tempo_total = TEMPOS[fruta_nome]
+                            tempo_colheita = data_segundos + tempo_total
+                            
                             terrenos_monitorados[id_unico] = {"planta": fruta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🍅 [DETECTADO] Fruta {fruta_nome.capitalize()} no canteiro {patch_id}.")
             
@@ -112,7 +113,7 @@ def executar_varredura_automatica():
     except Exception as e:
         print(f"❌ [ERRO INTERNO] Falha na varredura: {e}")
 
-# Interceptador de ciclos
+# Interceptador de ciclos automáticos em background
 def checar_tempo_e_varrer(messages):
     global ultimo_rastreio
     tempo_atual = time.time()
@@ -122,14 +123,17 @@ def checar_tempo_e_varrer(messages):
 
 bot.set_update_listener(checar_tempo_e_varrer)
 
-# 3. COMANDO /STATUS DETALHADO (RELATÓRIO DE TEMPO RESTANTE)
+# 3. COMANDO /STATUS COM ATUALIZAÇÃO FORÇADA E TEMPO RESTANTE
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
-    print("📥 [TELEGRAM] Comando /status solicitado.")
-    tempo_atual = int(time.time())
+    print("📥 [TELEGRAM] Comando /status solicitado. Forçando atualização da fazenda...")
     
-    texto_relatorio = f"🤖 **Relatório da Fazenda #{FARM_ID}**\n"
-    texto_relatorio += f"⏱️ *Última checagem automática ativa.*\n\n"
+    # MELHORIA: Força o bot a buscar dados atualizados do jogo no exato momento do clique
+    executar_varredura_automatica()
+    
+    tempo_atual = int(time.time())
+    texto_relatorio = f"🤖 **Relatório de Tempo Real - Fazenda #{FARM_ID}**\n"
+    texto_relatorio += f"⏱️ *Dados sincronizados com a Blockchain.*\n\n"
     
     linhas_crescimento = []
     linhas_prontas = []
@@ -174,7 +178,6 @@ if __name__ == '__main__':
     print("🧹 [SISTEMA] Removendo conexões antigas para evitar o Erro 409...")
     bot.delete_webhook(drop_pending_updates=True)
     
-    # CORREÇÃO: Linhas finais fechadas corretamente sem quebra de sintaxe
     print("🚀 [SISTEMA] Iniciando Polling Linear do Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-            
+    
