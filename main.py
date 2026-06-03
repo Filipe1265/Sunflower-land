@@ -40,7 +40,7 @@ COZINHA = {
 }
 
 # Quantidade padrão de plots de terra que você possui para a calculadora
-PLOTS_FAZENDA = 22  
+PLOTS_FAZENDA = 54  
 
 def temporizador_callback(chat_id, nome_item, segundos, id_unico):
     """Gerencia o tempo, enviando o pré-alerta e o alerta final"""
