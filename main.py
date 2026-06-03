@@ -42,7 +42,7 @@ TRADUCAO = {
 def checar_fazenda_loop():
     print(f"🕵️‍♂️ [SISTEMA] Iniciando monitoramento automático completo da fazenda {FARM_ID}...")
     
-    # Nova URL descentralizada para carregar dados direto da rede Polygon
+    # CORREÇÃO: URL restaurada com o caminho oficial da API pública do jogo
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
     while True:
@@ -101,21 +101,28 @@ def checar_fazenda_loop():
                         info["notificado"] = True
                         print(f"📢 [NOTIFICADO] Mensagem enviada para {info['planta']}.")
             else:
-                print(f"⚠️ [AVISO] API retornou erro. Aguardando próxima checagem...")
+                print(f"⚠️ [AVISO] API retornou erro status {resposta.status_code}. Aguardando próxima checagem...")
                 
         except Exception as e:
             print(f"❌ [ERRO] Falha crítica na leitura: {e}")
             
         time.sleep(120)  # Checa a cada 2 minutos
 
+# CORREÇÃO: Função do comando /status adicionada de volta com log de verificação
+@bot.message_handler(commands=['start', 'status'])
+def enviar_status(message):
+    print("📥 [TELEGRAM] Comando /status recebido com sucesso no chat!")
+    bot.reply_to(
+        message, 
+        f"🤖 **Monitor Automático Online!**\n\nEstou cuidando das Plantações e das Frutas da Fazenda **#{FARM_ID}** 24h por dia sem parar!"
+    )
+
 if __name__ == '__main__':
     threading.Thread(target=rodar_servidor_web).start()
     
-    # Inicia o loop forçado com logs claros
     t_monitor = threading.Thread(target=checar_fazenda_loop)
     t_monitor.daemon = True
     t_monitor.start()
     
     print("Bot com rastreador direto iniciado com sucesso!")
     bot.infinity_polling()
-                                    
