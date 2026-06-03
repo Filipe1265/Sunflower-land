@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Monitor SFL Linear Online!"
+    return "Monitor SFL Anti-Conflict Online!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 10000))
@@ -25,7 +25,6 @@ bot = TeleBot(TOKEN, threaded=False)
 terrenos_monitorados = {}
 ultimo_rastreio = 0
 
-# Tabela oficial de tempos do jogo em segundos
 TEMPOS = {
     "sunflower": 60, "potato": 300, "pumpkin": 1800, "carrot": 3420,
     "cabbage": 7200, "beetroot": 14400, "cauliflower": 28800, "parsnip": 43200,
@@ -41,7 +40,7 @@ TRADUCAO = {
 }
 
 def executar_varredura_automatica():
-    """Função isolada que faz a checagem e dispara os alertas"""
+    """Faz a checagem na API do jogo"""
     global terrenos_monitorados
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
@@ -73,7 +72,7 @@ def executar_varredura_automatica():
                             terrenos_monitorados[id_unico] = {"planta": planta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🌱 [DETECTADO] Plantio de {planta_nome.capitalize()} no campo {terreno_id}.")
 
-            # 2. CANTEIROS DE FRUTAS (Tomate)
+            # 2. CANTEIROS DE FRUTAS
             canteiros_frutas = fazenda_estado.get("fruitPatches", {})
             for patch_id, info_patch in canteiros_frutas.items():
                 fruit_data = info_patch.get("fruit")
@@ -105,31 +104,25 @@ def executar_varredura_automatica():
     except Exception as e:
         print(f"❌ [ERRO INTERNO] Falha na varredura: {e}")
 
-# Gancho nativo do Telebot: Toda vez que o bot checar por mensagens (a cada poucos segundos), 
-# ele também verifica se já se passaram 2 minutos para rodar a varredura da fazenda
-def interceptador_de_ciclo(updates):
+# Interceptador que roda de 2 em 2 minutos aproveitando a atividade do bot
+def checar_tempo_e_varrer(messages):
     global ultimo_rastreio
     tempo_atual = time.time()
-    
-    # 120 segundos = 2 minutos
     if tempo_atual - ultimo_rastreio >= 120:
         ultimo_rastreio = tempo_atual
         executar_varredura_automatica()
-    return updates
 
-# Configura o Telebot para usar o nosso interceptador de ciclo
-bot.set_update_listener(lambda updates: bot.process_new_updates(interceptador_de_ciclo(updates)))
+bot.set_update_listener(checar_tempo_e_varrer)
 
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
     print("📥 [TELEGRAM] Comando /status recebido!")
     bot.reply_to(
         message, 
-        f"🤖 **Monitor Automático Anti-Travamento Ativo!**\n\nEstou cuidando da Fazenda **#{FARM_ID}** de forma direta e integrada."
+        f"🤖 **Monitor Automático Online e Corrigido!**\n\nEstou cuidando da Fazenda **#{FARM_ID}** de forma direta e integrada."
     )
 
 if __name__ == '__main__':
-    # O servidor Web roda em Thread paralela rápida (apenas para o Render não dar erro)
     t_web = threading.Thread(target=rodar_servidor_web)
     t_web.daemon = True
     t_web.start()
@@ -138,6 +131,10 @@ if __name__ == '__main__':
     ultimo_rastreio = time.time()
     executar_varredura_automatica()
     
+    # SOLUÇÃO DO ERRO 409: Limpa conexões antigas travadas do contêiner anterior
+    print("🧹 [SISTEMA] Removendo conexões antigas do Telegram para evitar conflito...")
+    bot.delete_webhook(drop_pending_updates=True)
+    
     print("🚀 [SISTEMA] Iniciando Polling Linear e Unificado do Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-                            
+                
