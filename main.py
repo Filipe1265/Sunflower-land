@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Monitor SFL em Tempo Real Online!"
+    return "Monitor SFL Completo (Crops + Frutas + Árvores) Online!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 10000))
@@ -29,18 +29,20 @@ TEMPOS = {
     "sunflower": 60, "potato": 300, "pumpkin": 1800, "carrot": 3420,
     "cabbage": 7200, "beetroot": 14400, "cauliflower": 28800, "parsnip": 43200,
     "radish": 86400, "wheat": 73860, "corn": 61560, "barley": 147600,
-    "tomato": 6480, "blueberry": 14400, "orange": 28800, "apple": 86400, "banana": 43200
+    "tomato": 6480, "blueberry": 14400, "orange": 28800, "apple": 86400, "banana": 43200,
+    "wood_tree": 7200  # Tempo de recarga da árvore de madeira (2 horas) 🪵
 }
 
 TRADUCAO = {
     "sunflower": "Girassol", "potato": "Batata", "pumpkin": "Abóbora", "carrot": "Cenoura",
     "cabbage": "Repolho", "beetroot": "Beterraba", "cauliflower": "Couve", "parsnip": "Parsnip",
     "radish": "Rabanete", "wheat": "Trigo", "corn": "Milho", "barley": "Barley (Cevada)",
-    "tomato": "Tomate 🍅", "blueberry": "Mirtilo 🫐", "orange": "Laranja 🍊", "apple": "Maçã 🍎", "banana": "Banana 🍌"
+    "tomato": "Tomate 🍅", "blueberry": "Mirtilo 🫐", "orange": "Laranja 🍊", "apple": "Maçã 🍎", "banana": "Banana 🍌",
+    "wood_tree": "Árvore de Madeira 🪵"
 }
 
 def executar_varredura_automatica():
-    """Faz a checagem na API do jogo"""
+    """Faz a checagem completa na API do jogo"""
     global terrenos_monitorados
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
@@ -54,12 +56,12 @@ def executar_varredura_automatica():
             fazenda_estado = dados.get("state", {})
             tempo_atual = int(time.time())
             
-            # Limpa registros antigos que já foram colhidos para não acumular lixo na memória
+            # Limpa registros antigos da memória
             for id_plantio, info in list(terrenos_monitorados.items()):
                 if info["notificado"] and (tempo_atual - info["colheita_em"] > 600):
                     del terrenos_monitorados[id_plantio]
             
-            # 1. PLANTAÇÕES COMUNS
+            # 1. MONITORAMENTO: PLANTAÇÕES COMUNS
             terrenos_comuns = fazenda_estado.get("crops", {})
             for terreno_id, info_terreno in terrenos_comuns.items():
                 crop_data = info_terreno.get("crop")
@@ -75,11 +77,10 @@ def executar_varredura_automatica():
                         if planta_nome in TEMPOS and id_unico not in terrenos_monitorados:
                             tempo_total = TEMPOS[planta_nome]
                             tempo_colheita = data_plantio_segundos + tempo_total
-                            
                             terrenos_monitorados[id_unico] = {"planta": planta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🌱 [DETECTADO] Plantio de {planta_nome.capitalize()} no campo {terreno_id}.")
 
-            # 2. CANTEIROS DE FRUTAS
+            # 2. MONITORAMENTO: CANTEIROS DE FRUTAS
             canteiros_frutas = fazenda_estado.get("fruitPatches", {})
             for patch_id, info_patch in canteiros_frutas.items():
                 fruit_data = info_patch.get("fruit")
@@ -95,15 +96,37 @@ def executar_varredura_automatica():
                         if fruta_nome in TEMPOS and id_unico not in terrenos_monitorados:
                             tempo_total = TEMPOS[fruta_nome]
                             tempo_colheita = data_segundos + tempo_total
-                            
                             terrenos_monitorados[id_unico] = {"planta": fruta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🍅 [DETECTADO] Fruta {fruta_nome.capitalize()} no canteiro {patch_id}.")
             
-            # 3. DISPARO DOS ALARMES IMEDIATOS
+            # 3. NOVO: MONITORAMENTO DE ÁRVORES DE MADEIRA (Trees)
+            arvores_jogo = fazenda_estado.get("trees", {})
+            for tree_id, info_tree in arvores_jogo.items():
+                wood_data = info_tree.get("wood")
+                if wood_data:
+                    data_corte = wood_data.get("choppedAt")
+                    if data_corte:
+                        data_corte_segundos = data_corte // 1000
+                        id_unico = f"tree_{tree_id}_{data_corte_segundos}"
+                        
+                        # Se a árvore foi cortada, calcula o tempo de renascimento (2 horas)
+                        tempo_total = TEMPOS["wood_tree"]
+                        tempo_recarga = data_corte_segundos + tempo_total
+                        
+                        if id_unico not in terrenos_monitorados and tempo_atual < tempo_recarga:
+                            terrenos_monitorados[id_unico] = {"planta": "wood_tree", "colheita_em": tempo_recarga, "notificado": False}
+                            print(f"🪵 [DETECTADO] Árvore {tree_id} foi cortada. Iniciando recarga de 2h.")
+
+            # 4. DISPARO DOS ALARMES IMEDIATOS
             for id_plantio, info in list(terrenos_monitorados.items()):
                 if not info["notificado"] and tempo_atual >= info["colheita_em"]:
                     nome_exibicao = TRADUCAO.get(info["planta"], info["planta"].capitalize())
-                    msg = f"🚨 **ALERTA AUTOMÁTICO!**\nSua plantação de **{nome_exibicao}** na fazenda **#{FARM_ID}** está pronta para colheita! 🌾🍅🌻"
+                    
+                    if info["planta"] == "wood_tree":
+                        msg = f"🚨 **ALERTA AUTOMÁTICO!**\nSuas **Árvores de Madeira** na fazenda **#{FARM_ID}** cresceram novamente e estão prontas para o machado! 🪓🪵"
+                    else:
+                        msg = f"🚨 **ALERTA AUTOMÁTICO!**\nSua plantação de **{nome_exibicao}** na fazenda **#{FARM_ID}** está pronta para colheita! 🌾🍅🌻"
+                        
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                     info["notificado"] = True
                     print(f"📢 [NOTIFICADO] Mensagem enviada para {info['planta']}.")
@@ -113,7 +136,7 @@ def executar_varredura_automatica():
     except Exception as e:
         print(f"❌ [ERRO INTERNO] Falha na varredura: {e}")
 
-# Interceptador de ciclos automáticos em background
+# Interceptador de ciclos
 def checar_tempo_e_varrer(messages):
     global ultimo_rastreio
     tempo_atual = time.time()
@@ -123,17 +146,15 @@ def checar_tempo_e_varrer(messages):
 
 bot.set_update_listener(checar_tempo_e_varrer)
 
-# 3. COMANDO /STATUS COM ATUALIZAÇÃO FORÇADA E TEMPO RESTANTE
+# 4. COMANDO /STATUS AVANÇADO (INCLUINDO ÁRVORES)
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
     print("📥 [TELEGRAM] Comando /status solicitado. Forçando atualização da fazenda...")
-    
-    # MELHORIA: Força o bot a buscar dados atualizados do jogo no exato momento do clique
     executar_varredura_automatica()
     
     tempo_atual = int(time.time())
     texto_relatorio = f"🤖 **Relatório de Tempo Real - Fazenda #{FARM_ID}**\n"
-    texto_relatorio += f"⏱️ *Dados sincronizados com a Blockchain.*\n\n"
+    texto_relatorio += f"⏱ *Dados sincronizados com a API.*\n\n"
     
     linhas_crescimento = []
     linhas_prontas = []
@@ -143,7 +164,10 @@ def enviar_status(message):
         segundos_restantes = info["colheita_em"] - tempo_atual
         
         if segundos_restantes <= 0:
-            linhas_prontas.append(f"✅ **{nome_bonito}** — Pronto para Colher! 🌾")
+            if info["planta"] == "wood_tree":
+                linhas_prontas.append(f"✅ **{nome_bonito}** — Pronta para cortar! 🪓")
+            else:
+                linhas_prontas.append(f"✅ **{nome_bonito}** — Pronto para Colher! 🌾")
         else:
             dias = segundos_restantes // 86400
             horas = (segundos_restantes % 86400) // 3600
@@ -157,13 +181,11 @@ def enviar_status(message):
             linhas_crescimento.append(f"⏳ **{nome_bonito}** — Restam `{tempo_texto}`")
             
     if linhas_prontas:
-        texto_relatorio += "🚨 **Prontos para colheita:**\n" + "\n".join(linhas_prontas) + "\n\n"
-    
+        texto_relatorio += "🚨 **Prontos para colheita/corte:**\n" + "\n".join(linhas_prontas) + "\n\n"
     if linhas_crescimento:
-        texto_relatorio += "🌱 **Crescendo nos campos:**\n" + "\n".join(linhas_crescimento)
-        
+        texto_relatorio += "🌱 **Em crescimento / Recarga:**\n" + "\n".join(linhas_crescimento)
     if not linhas_prontas and not linhas_crescimento:
-        texto_relatorio += "📭 Nenhuma plantação ativa ou detectada no momento. Vá até o jogo e plante para iniciar o rastreio automático!"
+        texto_relatorio += "📭 Nenhuma atividade ativa na memória. Se você acabou de plantar ou cortar árvores, mude de mapa no jogo e digite /status novamente!"
 
     bot.reply_to(message, texto_relatorio, parse_mode="Markdown")
 
@@ -175,9 +197,6 @@ if __name__ == '__main__':
     ultimo_rastreio = time.time()
     executar_varredura_automatica()
     
-    print("🧹 [SISTEMA] Removendo conexões antigas para evitar o Erro 409...")
     bot.delete_webhook(drop_pending_updates=True)
-    
-    print("🚀 [SISTEMA] Iniciando Polling Linear do Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    
+                        
