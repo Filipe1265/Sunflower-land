@@ -10,15 +10,15 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Monitor SFL Anti-Conflict Online!"
+    return "Monitor SFL Automatizado e com Relatório Online!"
 
 def rodar_servidor_web():
     porta = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=porta)
 
-# 2. CONFIGURAÇÃO DO TELEGRAM E JOGO
-TOKEN = os.environ.get("TELEGRAM_TOKEN", "8779097957:AAEDGqwe5FQfbUQZI-IC4yBN87_ru9C1ccQ")
-CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID", 5303286197))
+# 2. CONFIGURAÇÃO SEGURA (LENDO DO SEU ENVIRONMENT NO RENDER)
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
+CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID")
 FARM_ID = 163523  # Sua fazenda fixa
 
 bot = TeleBot(TOKEN, threaded=False)
@@ -54,6 +54,11 @@ def executar_varredura_automatica():
             fazenda_estado = dados.get("state", {})
             tempo_atual = int(time.time())
             
+            # Limpa registros antigos que já foram colhidos para não acumular lixo na memória
+            for id_plantio, info in list(terrenos_monitorados.items()):
+                if info["notificado"] and (tempo_atual - info["colheita_em"] > 600):
+                    del terrenos_monitorados[id_plantio]
+            
             # 1. PLANTAÇÕES COMUNS
             terrenos_comuns = fazenda_estado.get("crops", {})
             for terreno_id, info_terreno in terrenos_comuns.items():
@@ -68,7 +73,9 @@ def executar_varredura_automatica():
                         id_unico = f"comum_{terreno_id}_{data_plantio_segundos}"
                         
                         if planta_nome in TEMPOS and id_unico not in terrenos_monitorados:
-                            tempo_colheita = data_plantio_segundos + TEMPOS[planta_nome]
+                            tempo_total = TEMPOS[planta_nome]
+                            tempo_colheita = data_plantio_segundos + tempo_total
+                            
                             terrenos_monitorados[id_unico] = {"planta": planta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🌱 [DETECTADO] Plantio de {planta_nome.capitalize()} no campo {terreno_id}.")
 
@@ -90,7 +97,7 @@ def executar_varredura_automatica():
                             terrenos_monitorados[id_unico] = {"planta": fruta_nome, "colheita_em": tempo_colheita, "notificado": False}
                             print(f"🍅 [DETECTADO] Fruta {fruta_nome.capitalize()} no canteiro {patch_id}.")
             
-            # 3. DISPARO DOS ALARMES
+            # 3. DISPARO DOS ALARMES IMEDIATOS
             for id_plantio, info in list(terrenos_monitorados.items()):
                 if not info["notificado"] and tempo_atual >= info["colheita_em"]:
                     nome_exibicao = TRADUCAO.get(info["planta"], info["planta"].capitalize())
@@ -104,7 +111,7 @@ def executar_varredura_automatica():
     except Exception as e:
         print(f"❌ [ERRO INTERNO] Falha na varredura: {e}")
 
-# Interceptador que roda de 2 em 2 minutos aproveitando a atividade do bot
+# Interceptador de ciclos
 def checar_tempo_e_varrer(messages):
     global ultimo_rastreio
     tempo_atual = time.time()
@@ -114,27 +121,63 @@ def checar_tempo_e_varrer(messages):
 
 bot.set_update_listener(checar_tempo_e_varrer)
 
+# 3. NOVO COMANDO /STATUS DETALHADO
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
-    print("📥 [TELEGRAM] Comando /status recebido!")
-    bot.reply_to(
-        message, 
-        f"🤖 **Monitor Automático Online e Corrigido!**\n\nEstou cuidando da Fazenda **#{FARM_ID}** de forma direta e integrada."
-    )
+    print("📥 [TELEGRAM] Comando /status solicitado.")
+    tempo_atual = int(time.time())
+    
+    # Cabeçalho do relatório
+    texto_relatorio = f"🤖 **Relatório da Fazenda #{FARM_ID}**\n"
+    texto_relatorio += f"⏱️ *Última checagem automática ativa.*\n\n"
+    
+    linhas_crescimento = []
+    linhas_prontas = []
+    
+    # Varre a memória do bot procurando o que está cadastrado
+    for id_plantio, info in terrenos_monitorados.items():
+        nome_bonito = TRADUCAO.get(info["planta"], info["planta"].capitalize())
+        segundos_restantes = info["colheita_em"] - tempo_atual
+        
+        if segundos_restantes <= 0:
+            linhas_prontas.append(f"✅ **{nome_bonito}** — ¡Pronto para Colher! 🌾")
+        else:
+            # Formatação do tempo legível
+            dias = segundos_restantes // 86400
+            horas = (segundos_restantes % 86400) // 3600
+            minutos = (segundos_restantes % 3600) // 60
+            
+            # Monta o texto bonitinho
+            tempo_texto = ""
+            if dias > 0: tempo_texto += f"{dias}d "
+            if horas > 0: tempo_texto += f"{horas}h "
+            tempo_texto += f"{minutos}m"
+            
+            linhas_crescimento.append(f"⏳ **{nome_bonito}** — Restam `{tempo_texto}`")
+            
+    # Junta as listas na mensagem final
+    if linhas_prontas:
+        texto_relatorio += "🚨 **Prontos para colheita:**\n" + "\n".join(linhas_prontas) + "\n\n"
+    
+    if lines_crescimento := linhas_crescimento:
+        texto_relatorio += "🌱 **Crescendo nos campos:**\n" + "\n".join(lines_crescimento)
+        
+    if not linhas_prontas and not linhas_crescimento:
+        texto_relatorio += "📭 Nenhuma plantação ativa ou detectada no momento. Vá até o jogo e plante para iniciar o rastreio automático!"
+
+    bot.reply_to(message, texto_relatorio, parse_mode="Markdown")
 
 if __name__ == '__main__':
     t_web = threading.Thread(target=rodar_servidor_web)
     t_web.daemon = True
     t_web.start()
     
-    # Executa uma varredura inicial logo ao ligar
     ultimo_rastreio = time.time()
     executar_varredura_automatica()
     
-    # SOLUÇÃO DO ERRO 409: Limpa conexões antigas travadas do contêiner anterior
-    print("🧹 [SISTEMA] Removendo conexões antigas do Telegram para evitar conflito...")
+    print("🧹 [SISTEMA] Removendo conexões antigas para evitar o Erro 409...")
     bot.delete_webhook(drop_pending_updates=True)
     
-    print("🚀 [SISTEMA] Iniciando Polling Linear e Unificado do Telegram...")
+    print("🚀 [SISTEMA] Iniciando Polling Linear do Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
                 
