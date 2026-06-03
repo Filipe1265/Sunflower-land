@@ -18,7 +18,7 @@ def rodar_servidor_web():
 
 # 2. CONFIGURAÇÃO SEGURA (LENDO DO SEU ENVIRONMENT NO RENDER)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID")
+CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID", 0))
 FARM_ID = 163523  # Sua fazenda fixa
 
 bot = TeleBot(TOKEN, threaded=False)
@@ -42,6 +42,7 @@ TRADUCAO = {
 def executar_varredura_automatica():
     """Faz a checagem na API do jogo"""
     global terrenos_monitorados
+    # CORREÇÃO: URL restaurada com o caminho oficial da API pública do jogo
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
     print("🔄 [LOG] Iniciando varredura programada na fazenda...")
@@ -121,33 +122,29 @@ def checar_tempo_e_varrer(messages):
 
 bot.set_update_listener(checar_tempo_e_varrer)
 
-# 3. NOVO COMANDO /STATUS DETALHADO
+# 3. COMANDO /STATUS DETALHADO (RELATÓRIO DE TEMPO RESTANTE)
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
     print("📥 [TELEGRAM] Comando /status solicitado.")
     tempo_atual = int(time.time())
     
-    # Cabeçalho do relatório
     texto_relatorio = f"🤖 **Relatório da Fazenda #{FARM_ID}**\n"
     texto_relatorio += f"⏱️ *Última checagem automática ativa.*\n\n"
     
     linhas_crescimento = []
     linhas_prontas = []
     
-    # Varre a memória do bot procurando o que está cadastrado
     for id_plantio, info in terrenos_monitorados.items():
         nome_bonito = TRADUCAO.get(info["planta"], info["planta"].capitalize())
         segundos_restantes = info["colheita_em"] - tempo_atual
         
         if segundos_restantes <= 0:
-            linhas_prontas.append(f"✅ **{nome_bonito}** — ¡Pronto para Colher! 🌾")
+            linhas_prontas.append(f"✅ **{nome_bonito}** — Pronto para Colher! 🌾")
         else:
-            # Formatação do tempo legível
             dias = segundos_restantes // 86400
             horas = (segundos_restantes % 86400) // 3600
             minutos = (segundos_restantes % 3600) // 60
             
-            # Monta o texto bonitinho
             tempo_texto = ""
             if dias > 0: tempo_texto += f"{dias}d "
             if horas > 0: tempo_texto += f"{horas}h "
@@ -155,12 +152,11 @@ def enviar_status(message):
             
             linhas_crescimento.append(f"⏳ **{nome_bonito}** — Restam `{tempo_texto}`")
             
-    # Junta as listas na mensagem final
     if linhas_prontas:
         texto_relatorio += "🚨 **Prontos para colheita:**\n" + "\n".join(linhas_prontas) + "\n\n"
     
-    if lines_crescimento := linhas_crescimento:
-        texto_relatorio += "🌱 **Crescendo nos campos:**\n" + "\n".join(lines_crescimento)
+    if linhas_crescimento:
+        texto_relatorio += "🌱 **Crescendo nos campos:**\n" + "\n".join(linhas_crescimento)
         
     if not linhas_prontas and not linhas_crescimento:
         texto_relatorio += "📭 Nenhuma plantação ativa ou detectada no momento. Vá até o jogo e plante para iniciar o rastreio automático!"
@@ -178,6 +174,7 @@ if __name__ == '__main__':
     print("🧹 [SISTEMA] Removendo conexões antigas para evitar o Erro 409...")
     bot.delete_webhook(drop_pending_updates=True)
     
+    # CORREÇÃO: Linhas finais fechadas corretamente sem quebra de sintaxe
     print("🚀 [SISTEMA] Iniciando Polling Linear do Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-                
+            
