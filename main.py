@@ -41,18 +41,17 @@ TRADUCAO = {
 
 def checar_fazenda_loop():
     print(f"🕵️‍♂️ [SISTEMA] Iniciando monitoramento automático completo da fazenda {FARM_ID}...")
-    
-    # CORREÇÃO: URL restaurada com o caminho oficial da API pública do jogo
     url_api = f"https://sunflower-land.com{FARM_ID}"
     
     while True:
         print("🔄 [LOG] Fazendo varredura na fazenda...")
         try:
-            resposta = requests.get(url_api, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            # timeout=10 força a requisição a desistir se a API do SFL travar por mais de 10 segundos
+            resposta = requests.get(url_api, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             print(f"📡 [LOG] Resposta recebida da rede. Status: {resposta.status_code}")
             
             if resposta.status_code == 200:
-                dados = resposta.json()
+                dados = resposta.json()  # CORRIGIDO: Atribuição limpa sem variáveis fantasmas
                 fazenda_estado = dados.get("state", {})
                 tempo_atual = int(time.time())
                 
@@ -104,11 +103,12 @@ def checar_fazenda_loop():
                 print(f"⚠️ [AVISO] API retornou erro status {resposta.status_code}. Aguardando próxima checagem...")
                 
         except Exception as e:
-            print(f"❌ [ERRO] Falha crítica na leitura: {e}")
+            # Se der qualquer erro (como internet caindo), ele avisa aqui e o loop CONTINUA
+            print(f"❌ [ERRO INTERNO] Falha na varredura atual: {e}")
             
+        print("💤 [LOG] Aguardando 2 minutos para a próxima checagem...")
         time.sleep(120)  # Checa a cada 2 minutos
 
-# CORREÇÃO: Função do comando /status adicionada de volta com log de verificação
 @bot.message_handler(commands=['start', 'status'])
 def enviar_status(message):
     print("📥 [TELEGRAM] Comando /status recebido com sucesso no chat!")
@@ -118,20 +118,17 @@ def enviar_status(message):
     )
 
 if __name__ == '__main__':
-    # 1. Abre o servidor Web para o Render ficar feliz (Prioridade 1)
+    # 1. Servidor Web
     t_web = threading.Thread(target=rodar_servidor_web)
     t_web.daemon = True
     t_web.start()
     
-    # 2. Inicia o espião da fazenda em uma thread totalmente isolada e segura (Prioridade 2)
+    # 2. Monitor da fazenda
     t_monitor = threading.Thread(target=checar_fazenda_loop)
     t_monitor.daemon = True
     t_monitor.start()
     
-    # 3. Dá 5 segundos de folga para o sistema respirar antes de ligar o Telegram
-    time.sleep(5)
+    time.sleep(3)
     
-    # 4. Lança o polling do Telegram na linha principal (Garante que ele responda e não congele)
-    print("🚀 [SISTEMA] Bot e Rastreador integrados com sucesso. Conectando ao Telegram...")
+    print("🚀 [SISTEMA] Tudo pronto. Conectando ao Telegram...")
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
-    
